@@ -1,0 +1,12 @@
++notimingcheck
++nospecify
++timeout+={data.timeout}
++vlog_ext+.inc+.v
++vhd_ext+.vhd
++sysv_ext+.sv
++incdir+./../uvm/env
++incdir+./../uvm/cfg
++incdir+./../uvm/agent
++incdir+./../uvm/seq
++incdir+./../uvm/vif
++../uvm/tb.sv
