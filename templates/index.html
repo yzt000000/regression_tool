@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Regression Test Manager</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background:#fff; color:#000; }
+        .case-item { display:flex; align-items:center; gap:0.5rem; margin:4px 0; }
+        .case-name { flex:0 0 340px; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+        button {
+            border:none; padding:4px 10px; border-radius:4px; color:#fff;
+            cursor:pointer; font-size:14px;
+        }
+        .btn-green  { background:#22c55e; }
+        .btn-blue   { background:#3b82f6; }
+        .btn-red    { background:#ef4444; }
+        .btn-gray   { background:#6b7280; }
+        .btn-indigo { background:#6366f1; }
+    </style>
+    <script>
+        let testcases = [];
+        let currentType = '';
+        let currentGroup = '';
+
+        async function loadTestcases() {
+            const file = document.getElementById('csvFile').files[0];
+            if (!file) { alert('Select a CSV file'); return; }
+            const fd = new FormData(); fd.append('csv_file', file);
+            const res = await fetch('/load_testcases', {method:'POST', body:fd});
+            const data = await res.json();
+            if (data.error) { alert(data.error); return; }
+            testcases = data.testcases;
+            populateFilters();
+            updateTestcaseList();
+        }
+
+        function populateFilters() {
+            const types = [...new Set(testcases.map(tc => tc.config.type))];
+            const groups = [...new Set(testcases.map(tc => tc.config.group))];
+
+            const typeSelect = document.getElementById('filterType');
+            typeSelect.innerHTML = '<option value="">All</option>';
+            types.forEach(t => {
+                const opt = document.createElement('option');
+                opt.value = t;
+                opt.textContent = t;
+                typeSelect.appendChild(opt);
+            });
+
+            const groupSelect = document.getElementById('filterGroup');
+            groupSelect.innerHTML = '<option value="">All</option>';
+            groups.forEach(g => {
+                const opt = document.createElement('option');
+                opt.value = g;
+                opt.textContent = g;
+                groupSelect.appendChild(opt);
+            });
+        }
+
+        function filterTestcases() {
+            currentType = document.getElementById('filterType').value;
+            currentGroup = document.getElementById('filterGroup').value;
+            updateTestcaseList();
+        }
+
+        function updateTestcaseList() {
+            const container = document.getElementById('testcaseList');
+            const prev = [...document.querySelectorAll('input[name="testcase"]:checked')].map(cb=>cb.value);
+            container.innerHTML = '';
+
+            const filtered = testcases.filter(tc => {
+                const typeMatch = !currentType || tc.config.type === currentType;
+                const groupMatch = !currentGroup || tc.config.group === currentGroup;
+                return typeMatch && groupMatch;
+            });
+
+            filtered.forEach((tc,i)=>{
+                const originalIndex = testcases.indexOf(tc);
+                const div=document.createElement('div'); div.className='case-item';
+                const chk = prev.includes(String(originalIndex)) ? 'checked' : '';
+                div.innerHTML=`
+                    <input type="checkbox" name="testcase" value="${originalIndex}" ${chk}>
+                    <span class="case-name">${tc.name} (${tc.status})</span>
+                    <div>
+                        <button class="btn-green ${tc.dir?'hidden':''}"  onclick="createTestcase(${originalIndex})">Create</button>
+                        <button class="btn-blue  ${tc.dir && !tc.pid?'':'hidden'}" onclick="runTestcase(${originalIndex})">Run</button>
+                        <button class="btn-red   ${tc.dir?'':'hidden'}" onclick="deleteTestcase(${originalIndex})">Delete</button>
+                    </div>`;
+                container.appendChild(div);
+            });
+            updateSelectAllBtn();
+            updateSummary();
+        }
+
+        function toggleSelectAll(){
+            const cbs=document.querySelectorAll('input[name="testcase"]');
+            const all=cbs.length && [...cbs].every(cb=>cb.checked);
+            cbs.forEach(cb=>cb.checked=!all);
+            updateSelectAllBtn();
+        }
+        function updateSelectAllBtn(){
+            const btn=document.getElementById('selectAll');
+            const total=document.querySelectorAll('input[name="testcase"]').length;
+            const checked=document.querySelectorAll('input[name="testcase"]:checked').length;
+            btn.textContent=(checked===total && total>0)?'Unselect All':'Select All';
+        }
+
+        async function createTestcase(i){await fetch('/create_testcase',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({index:i})});updateStatus();}
+        async function runTestcase(i){await fetch('/run_testcase',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({index:i})});updateStatus();}
+        async function deleteTestcase(i){await fetch('/delete_testcase',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({index:i})});updateStatus();}
+
+        async function createSelected(){
+            const s=[...document.querySelectorAll('input[name="testcase"]:checked')].map(cb=>cb.value);
+            if(!s.length){alert('Select at least one');return;}
+            await fetch('/create_selected',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({selected:s})});
+            updateStatus();
+        }
+        async function runSelected(){
+            const s=[...document.querySelectorAll('input[name="testcase"]:checked')].map(cb=>cb.value);
+            if(!s.length){alert('Select at least one');return;}
+            await fetch('/run_selected',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({selected:s})});
+            updateStatus();
+        }
+        async function deleteSelected(){
+            const s=[...document.querySelectorAll('input[name="testcase"]:checked')].map(cb=>cb.value);
+            if(!s.length){alert('Select at least one');return;}
+            await fetch('/delete_selected',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({selected:s})});
+            updateStatus();
+        }
+
+        function updateSummary(){
+            const pass=testcases.filter(c=>c.result==='PASS').length;
+            const fail=testcases.filter(c=>c.result==='FAIL').length;
+            const timeout=testcases.filter(c=>c.result==='TIMEOUT').length;
+            const total=testcases.length;
+            document.getElementById('summary').textContent=
+                `Summary: Total=${total}, Pass=${pass}, Fail=${fail}, Timeout=${timeout}`;
+        }
+
+        async function updateStatus(){
+            const res=await fetch('/get_status');
+            const data=await res.json();
+            testcases=data.cases;
+            updateTestcaseList();
+            document.getElementById('runningCases').innerHTML=
+                data.cases.filter(c=>c.status==='Running').map(c=>`${c.name} (PID:${c.pid}) - ${c.log}`).join('<br>');
+            document.getElementById('finishedCases').innerHTML=
+                data.cases.filter(c=>c.status==='Finished').map(c=>`${c.name} - ${c.result}`).join('<br>');
+            if(data.cases.some(c=>c.status==='Running')) setTimeout(updateStatus,1000);
+        }
+    </script>
+</head>
+<body>
+    <h1 style="margin-bottom:10px;">Regression Test Manager</h1>
+
+    <div style="margin-bottom:10px;">
+        <input type="file" id="csvFile" accept=".csv" style="margin-right:8px;">
+        <button class="btn-indigo" onclick="loadTestcases()">Load Testcases</button>
+    </div>
+
+    <div style="margin-bottom:10px;">
+        <label>Type:
+            <select id="filterType" onchange="filterTestcases()">
+                <option value="">All</option>
+            </select>
+        </label>
+        <label>Group:
+            <select id="filterGroup" onchange="filterTestcases()">
+                <option value="">All</option>
+            </select>
+        </label>
+    </div>
+
+    <div style="margin-bottom:10px;">
+        <button id="selectAll" class="btn-gray" onclick="toggleSelectAll()">Select All</button>
+        <button class="btn-green" onclick="createSelected()">Create Selected</button>
+        <button class="btn-blue"  onclick="runSelected()">Run Selected</button>
+        <button class="btn-red"   onclick="deleteSelected()">Delete Selected</button>
+    </div>
+
+    <div id="testcaseList" style="margin-bottom:15px;"></div>
+
+    <div style="margin-bottom:8px;"><b>Running Cases</b><br><div id="runningCases"></div></div>
+    <div style="margin-bottom:8px;"><b>Finished Cases</b><br><div id="finishedCases"></div></div>
+    <div><b id="summary">Summary: Awaiting cases...</b></div>
+</body>
+</html>
