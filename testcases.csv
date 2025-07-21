@@ -1,0 +1,5 @@
+type, group, platform , pattern, timeout
+ss, gp1, dig, dig_ss_test ,2000
+ss, gp2, dig, dig_ss_test ,3000
+tt, gp2, dig, dig_ss_test ,4000
+tt, gp2, dig, dig_ss_test ,5000
